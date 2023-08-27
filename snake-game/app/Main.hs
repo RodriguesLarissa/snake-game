@@ -13,14 +13,15 @@ data World = World { snake :: Snake, fruit :: Fruit, score :: Int }
 
 render :: World -> Picture
 render world
-  | isGameOver world = pictures [renderBorders, renderSnake, gameOverText, renderScore world]
+  | isGameOver world = pictures [renderBorders, renderSnake, gameOverText, gameOverMessage, renderScore world]
   | otherwise = pictures [renderBorders, renderSnake, renderFruit (worldFruit world), renderScore world]
   where
     renderSnake = pictures $ map renderSegment (snakeSegments (worldSnake world))
-    gameOverText = translate (-200) 0 $ scale 0.5 0.5 $ color red $ textWithBorder "GAME OVER"
+    gameOverText = translate (-200) 0 $ scale 0.5 0.5 $ color red $ textWithBorder "GAME OVER" red
+    gameOverMessage = translate (-220) (-50) $ scale 0.25 0.25 $ color white $ textWithBorder "Pressione R para recomecar" white
     
 renderScore :: World -> Picture
-renderScore world = translate 230 230 $ scale 0.25 0.25 $ color white $ text ("Score: " ++ show (score world))
+renderScore world = translate 200 230 $ scale 0.25 0.25 $ color white $ text ("Score: " ++ show (score world))
 
 renderFruit :: Fruit -> Picture
 renderFruit (Fruit (x, y)) = translate x y $ color red $ pictures [appleBody, appleStem]
@@ -39,14 +40,14 @@ appleBody =
 appleStem :: Picture
 appleStem = translate (-1) 10 $ color green $ rectangleSolid 2 6
 
-textWithBorder :: String -> Picture
-textWithBorder str =
+textWithBorder :: String -> Color -> Picture
+textWithBorder str color =
   pictures
-    [ translate (-1) 1 $ coloredText red str,
-      translate (-1) (-1) $ coloredText red str,
-      translate 1 1 $ coloredText red str,
-      translate 1 (-1) $ coloredText red str,
-      coloredText red str
+    [ translate (-1) 1 $ coloredText color str,
+      translate (-1) (-1) $ coloredText color str,
+      translate 1 1 $ coloredText color str,
+      translate 1 (-1) $ coloredText color str,
+      coloredText color str
     ]
 
 coloredText :: Color -> String -> Picture
@@ -59,7 +60,7 @@ snakeSegments :: Snake -> [(Float, Float)]
 snakeSegments (Snake segments _) = segments
 
 worldFruit :: World -> Fruit
-worldFruit (World _ fruit _) = fruit
+worldFruit (World _ fruitActual _) = fruitActual
 
 segmentSize :: Float
 segmentSize = 20
@@ -74,10 +75,10 @@ update dt world =
     else updateSnake dt (moveSnake world)
 
 isGameOver :: World -> Bool
-isGameOver world =
+isGameOver world = 
   let Snake segments _ = snake world
       (x, y) = head segments
-   in x > 399 || x < -399 || y > 299 || y < -299 
+   in x > 399 || x < -399 || y > 299 || y < -299 || hasCollisionWithBody (x, y) (tail segments)
 
 moveSnake :: World -> World
 moveSnake world =
@@ -106,7 +107,7 @@ updateSnakeIO world = do
 
   let newSnake =
         if collidedWithFruit
-          then Snake (moveHead newHead (snakeSegments oldSnake) ++ [newHead]) (snakeDirection oldSnake)
+          then Snake (snakeSegments oldSnake ++ [newHead]) (snakeDirection oldSnake)
           else Snake (moveHead newHead (snakeSegments oldSnake)) (snakeDirection oldSnake)
 
   let newScore =
@@ -121,6 +122,9 @@ worldSnake (World currentSnake _ _) = currentSnake
 
 snakeDirection :: Snake -> Direction
 snakeDirection (Snake _ direction) = direction
+
+hasCollisionWithBody :: (Float, Float) -> [(Float, Float)] -> Bool
+hasCollisionWithBody headPos segments = headPos `elem` segments
 
 hasCollisionToFruit :: (Float, Float) -> [(Float, Float)] -> Bool
 hasCollisionToFruit _ [] = False
@@ -146,13 +150,14 @@ handleEvent (EventKey (SpecialKey KeyUp) Down _ _) world = changeDirection North
 handleEvent (EventKey (SpecialKey KeyDown) Down _ _) world = changeDirection South world
 handleEvent (EventKey (SpecialKey KeyLeft) Down _ _) world = changeDirection West world
 handleEvent (EventKey (SpecialKey KeyRight) Down _ _) world = changeDirection East world
+handleEvent (EventKey (Char 'r') Down _ _) _ = initialState  
 handleEvent _ world = world
 
 changeDirection :: Direction -> World -> World
-changeDirection newDir world@(World currentSnake fruitPos score) =
+changeDirection newDir world@(World currentSnake fruitPos scorePoints) =
   if isOppositeDirection currentDir newDir
     then world
-    else World (Snake (snakeSegments currentSnake) newDir) fruitPos score
+    else World (Snake (snakeSegments currentSnake) newDir) fruitPos scorePoints
   where
     currentDir = snakeDirection currentSnake
 
@@ -188,13 +193,16 @@ generateRandomFruit = do
 fruitPosition :: Fruit -> (Float, Float)
 fruitPosition (Fruit pos) = pos
 
+initialState :: World
+initialState =
+  let randomFruitPosition = unsafePerformIO generateRandomPosition
+      initialSnake = Snake [(0, 0), (10, 0), (20, 0)] East
+  in World initialSnake (Fruit randomFruitPosition) 0
+
 main :: IO ()
 main = do
-  randomFruitPosition <- generateRandomPosition
-  let initialState = World initialSnake (Fruit randomFruitPosition) 0
   play exhibit bgColor fps initialState render handleEvent update
   where
     exhibit = InWindow "Snake Game" (800, 600) (100, 100)
     bgColor = black
     fps = 8
-    initialSnake = Snake [(0, 0), (10, 0), (20, 0)] East
